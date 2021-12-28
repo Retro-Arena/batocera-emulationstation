@@ -514,6 +514,11 @@ namespace Renderer
 		setStencil(vertex.data(), vertex.size());
 	}
 
+	//////////////////////////////////////////////////////////////////////////
+	unsigned int IRenderer::convertColor(const unsigned int _color)
+	{
+		return ((_color & 0xFF000000) >> 24) | ((_color & 0x00FF0000) >> 8) | ((_color & 0x0000FF00) << 8) | ((_color & 0x000000FF) << 24);
+	}
 
 	//////////////////////////////////////////////////////////////////////////
 
@@ -706,6 +711,11 @@ namespace Renderer
 	void swapBuffers() 
 	{
 		Instance()->swapBuffers();
+	}
+
+	unsigned int convertColor(const unsigned int _color)
+	{
+		return Instance()->convertColor(_color);
 	}
 
 } // Renderer::

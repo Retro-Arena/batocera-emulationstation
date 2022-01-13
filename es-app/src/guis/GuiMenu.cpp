@@ -55,6 +55,7 @@
 #include "guis/GuiKeyMappingEditor.h"
 #include "Gamelist.h"
 #include "TextToSpeech.h"
+#include "Paths.h"
 
 #if WIN32
 #include "Win32ApiSystem.h"
@@ -65,7 +66,6 @@
 #define fake_gettext_instant _("instant")
 #define fake_gettext_fadeslide _("fade & slide")
 
-// batocera-info
 #define fake_gettext_system       _("System")
 #define fake_gettext_architecture _("Architecture")
 #define fake_gettext_diskformat   _("Disk format")
@@ -104,7 +104,7 @@
 GuiMenu::GuiMenu(Window *window, bool animate) : GuiComponent(window), mMenu(window, _("MAIN MENU").c_str()), mVersion(window)
 {
 	// MAIN MENU
-	bool isFullUI = UIModeController::getInstance()->isUIModeFull();
+	bool isFullUI = !UIModeController::getInstance()->isUIModeKid() && !UIModeController::getInstance()->isUIModeKiosk();
 
 	// KODI >
 	// GAMES SETTINGS >
@@ -141,22 +141,22 @@ GuiMenu::GuiMenu(Window *window, bool animate) : GuiComponent(window), mMenu(win
 	if (isFullUI)
 	{
 #if !defined(WIN32) || defined(_DEBUG)
-		addEntry(_("GAME SETTINGS").c_str(), true, [this] { openGamesSettings_batocera(); }, "iconGames");
-		addEntry(controllers_settings_label.c_str(), true, [this] { openControllersSettings_batocera(); }, "iconControllers");
+		addEntry(_("GAME SETTINGS").c_str(), true, [this] { openGamesSettings(); }, "iconGames");
+		addEntry(controllers_settings_label.c_str(), true, [this] { openControllersSettings(); }, "iconControllers");
 		addEntry(_("UI SETTINGS").c_str(), true, [this] { openUISettings(); }, "iconUI");
 		addEntry(_("GAME COLLECTION SETTINGS").c_str(), true, [this] { openCollectionSystemSettings(); }, "iconAdvanced");
 		addEntry(_("SOUND SETTINGS").c_str(), true, [this] { openSoundSettings(); }, "iconSound");
 
 		if (ApiSystem::getInstance()->isScriptingSupported(ApiSystem::WIFI))
-			addEntry(_("NETWORK SETTINGS").c_str(), true, [this] { openNetworkSettings_batocera(); }, "iconNetwork");
+			addEntry(_("NETWORK SETTINGS").c_str(), true, [this] { openNetworkSettings(); }, "iconNetwork");
 #else
 		if (ApiSystem::getInstance()->isScriptingSupported(ApiSystem::GAMESETTINGS))
-			addEntry(_("GAME SETTINGS").c_str(), true, [this] { openGamesSettings_batocera(); }, "iconGames");
+			addEntry(_("GAME SETTINGS").c_str(), true, [this] { openGamesSettings(); }, "iconGames");
 
 		addEntry(_("UI SETTINGS").c_str(), true, [this] { openUISettings(); }, "iconUI");
 
 		if (ApiSystem::getInstance()->isScriptingSupported(ApiSystem::GAMESETTINGS))		
-			addEntry(controllers_settings_label.c_str(), true, [this] { openControllersSettings_batocera(); }, "iconControllers");
+			addEntry(controllers_settings_label.c_str(), true, [this] { openControllersSettings(); }, "iconControllers");
 		else
 			addEntry(_("CONFIGURE INPUT"), true, [this] { openConfigInput(); }, "iconControllers");
 
@@ -178,7 +178,7 @@ GuiMenu::GuiMenu(Window *window, bool animate) : GuiComponent(window), mMenu(win
 
 		addEntry(_("SCRAPER").c_str(), true, [this] { openScraperSettings(); }, "iconScraper");		
 		addEntry(_("UPDATES & DOWNLOADS"), true, [this] { openUpdatesSettings(); }, "iconUpdates");
-		addEntry(_("SYSTEM SETTINGS").c_str(), true, [this] { openSystemSettings_batocera(); }, "iconSystem");
+		addEntry(_("SYSTEM SETTINGS").c_str(), true, [this] { openSystemSettings(); }, "iconSystem");
 	}
 	else
 	{
@@ -187,13 +187,13 @@ GuiMenu::GuiMenu(Window *window, bool animate) : GuiComponent(window), mMenu(win
 	}
 
 #ifdef WIN32
-	addEntry(_("QUIT").c_str(), !Settings::getInstance()->getBool("ShowOnlyExit"), [this] {openQuitMenu_batocera(); }, "iconQuit");
+	addEntry(_("QUIT").c_str(), !Settings::getInstance()->getBool("ShowOnlyExit"), [this] {openQuitMenu(); }, "iconQuit");
 #else
-	addEntry(_("QUIT").c_str(), true, [this] { openQuitMenu_batocera(); }, "iconQuit");
+	addEntry(_("QUIT").c_str(), true, [this] { openQuitMenu(); }, "iconQuit");
 #endif
 	
 	addChild(&mMenu);
-	addVersionInfo(); // batocera
+	addVersionInfo();
 	setSize(mMenu.getSize());
 
 	if (animate)
@@ -343,9 +343,9 @@ bool GuiMenu::input(InputConfig* config, Input input)
 std::vector<HelpPrompt> GuiMenu::getHelpPrompts()
 {
 	std::vector<HelpPrompt> prompts;
-	prompts.push_back(HelpPrompt("up/down", _("CHOOSE"))); // batocera
-	prompts.push_back(HelpPrompt(BUTTON_OK, _("SELECT"))); // batocera
-	prompts.push_back(HelpPrompt("start", _("CLOSE"))); // batocera
+	prompts.push_back(HelpPrompt("up/down", _("CHOOSE"))); 
+	prompts.push_back(HelpPrompt(BUTTON_OK, _("SELECT"))); 
+	prompts.push_back(HelpPrompt("start", _("CLOSE"))); 
 	return prompts;
 }
 
@@ -375,7 +375,16 @@ class ExitKidModeMsgBox : public GuiSettings
 
 void GuiMenu::exitKidMode()
 {
-	mWindow->pushGui(new ExitKidModeMsgBox(mWindow, _("UNLOCK UI MODE"), _("ENTER THE CODE TO UNLOCK THE CURRENT UI MODE")));
+	if (Settings::getInstance()->getString("UIMode") == "Basic")
+	{
+		Settings::getInstance()->setString("UIMode", "Full");
+
+		Window* window = mWindow;
+		while (window->peekGui() && window->peekGui() != ViewController::get())
+			delete window->peekGui();
+	}
+	else
+		mWindow->pushGui(new ExitKidModeMsgBox(mWindow, _("UNLOCK UI MODE"), _("ENTER THE CODE TO UNLOCK THE CURRENT UI MODE")));
 }
 
 void GuiMenu::openSystemInformations()
@@ -532,7 +541,7 @@ void GuiMenu::openDeveloperSettings()
 	{
 		ImageIO::clearImageCache();
 
-		auto rootPath = Utils::FileSystem::getGenericPath(Utils::FileSystem::getEsConfigPath());
+		auto rootPath = Utils::FileSystem::getGenericPath(Paths::getUserEmulationStationPath());
 
 		Utils::FileSystem::deleteDirectoryFiles(rootPath + "/tmp/");
 		Utils::FileSystem::deleteDirectoryFiles(Utils::FileSystem::getTempPath());
@@ -795,7 +804,6 @@ void GuiMenu::openUpdatesSettings()
 
 	updateGui->addGroup(_("DOWNLOADS"));
 
-	// Batocera integration with Batocera Store
 	if (ApiSystem::getInstance()->isScriptingSupported(ApiSystem::BATOCERASTORE))
 	{
 		updateGui->addEntry(_("CONTENT DOWNLOADER"), true, [this]
@@ -807,7 +815,7 @@ void GuiMenu::openUpdatesSettings()
 		});
 	}
 
-	// Batocera themes installer/browser
+	// Themes installer/browser
 	if (ApiSystem::getInstance()->isScriptingSupported(ApiSystem::THEMESDOWNLOADER))
 	{
 		updateGui->addEntry(_("THEMES"), true, [this]
@@ -819,7 +827,7 @@ void GuiMenu::openUpdatesSettings()
 		});
 	}
 
-	// Batocera integration with theBezelProject
+	// integration with theBezelProject
 	if (ApiSystem::getInstance()->isScriptingSupported(ApiSystem::DECORATIONS) && ApiSystem::getInstance()->isScriptingSupported(ApiSystem::THEBEZELPROJECT))
 	{
 		updateGui->addEntry(_("THE BEZEL PROJECT"), true, [this]
@@ -888,7 +896,7 @@ bool GuiMenu::checkNetwork()
 	return true;
 }
 
-void GuiMenu::openSystemSettings_batocera() 
+void GuiMenu::openSystemSettings() 
 {
 	Window *window = mWindow;
 
@@ -1007,18 +1015,23 @@ void GuiMenu::openSystemSettings_batocera()
 	s->addWithLabel(_("UI MODE"), UImodeSelection);
 	s->addSaveFunc([UImodeSelection, window]
 	{
-		std::string selectedMode = UImodeSelection->getSelected();
-		if (selectedMode != "Full")
+		if (UImodeSelection->changed())
 		{
-			std::string msg = _("You are changing the UI to a restricted mode:\nThis will hide most menu options to prevent changes to the system.\nTo unlock and return to the full UI, enter this code:") + "\n";
-			msg += "\"" + UIModeController::getInstance()->getFormattedPassKeyStr() + "\"\n\n";
-			msg += _("Do you want to proceed?");
-			window->pushGui(new GuiMsgBox(window, msg,
-				_("YES"), [selectedMode] {
-				LOG(LogDebug) << "Setting UI mode to " << selectedMode;
+			std::string selectedMode = UImodeSelection->getSelected();
+			if (selectedMode == "Basic" || selectedMode == "Full")
 				Settings::getInstance()->setString("UIMode", selectedMode);
-				Settings::getInstance()->saveFile();
-			}, _("NO"), nullptr));
+			else
+			{
+				std::string msg = _("You are changing the UI to a restricted mode:\nThis will hide most menu options to prevent changes to the system.\nTo unlock and return to the full UI, enter this code:") + "\n";
+				msg += "\"" + UIModeController::getInstance()->getFormattedPassKeyStr() + "\"\n\n";
+				msg += _("Do you want to proceed?");
+				window->pushGui(new GuiMsgBox(window, msg,
+					_("YES"), [selectedMode] {
+					LOG(LogDebug) << "Setting UI mode to " << selectedMode;
+					Settings::getInstance()->setString("UIMode", selectedMode);
+					Settings::getInstance()->saveFile();
+				}, _("NO"), nullptr));
+			}
 		}
 	});
 
@@ -1769,7 +1782,7 @@ void GuiMenu::addFeatures(const VectorEx<CustomFeature>& features, Window* windo
 	}
 }
 
-void GuiMenu::openGamesSettings_batocera() 
+void GuiMenu::openGamesSettings() 
 {
 	Window* window = mWindow;
 
@@ -2231,7 +2244,7 @@ void GuiMenu::openEmulatorSettings()
 	window->pushGui(configuration);
 }
 
-void GuiMenu::openControllersSettings_batocera(int autoSel)
+void GuiMenu::openControllersSettings(int autoSel)
 {
 	GuiSettings* s = new GuiSettings(mWindow, controllers_settings_label.c_str());
 
@@ -2246,7 +2259,7 @@ void GuiMenu::openControllersSettings_batocera(int autoSel)
 				"IF YOU DO NOT HAVE A SPECIAL KEY FOR HOTKEY, USE THE SELECT BUTTON. SKIP "
 				"ALL BUTTONS/STICKS YOU DO NOT HAVE BY HOLDING ANY KEY. PRESS THE "
 				"SOUTH BUTTON TO CONFIRM WHEN DONE."), 
-			_("OK"), [window, this, s] { window->pushGui(new GuiDetectDevice(window, false, [this, s] { s->setSave(false); delete s; this->openControllersSettings_batocera(); })); },
+			_("OK"), [window, this, s] { window->pushGui(new GuiDetectDevice(window, false, [this, s] { s->setSave(false); delete s; this->openControllersSettings(); })); },
 			_("CANCEL"), nullptr,
 			GuiMsgBoxIcon::ICON_INFORMATION));
 	});
@@ -2381,7 +2394,7 @@ void GuiMenu::openControllersSettings_batocera(int autoSel)
 		if (Settings::getInstance()->setBool("ShowControllerActivity", activity->getState()))
 		{
 			delete s;
-			openControllersSettings_batocera(1);
+			openControllersSettings(1);
 		}
 	});
 	
@@ -2935,7 +2948,7 @@ void GuiMenu::openThemeConfiguration(Window* mWindow, GuiComponent* s, std::shar
 			}
 
 			Settings::getInstance()->saveFile();
-			std::string path = Utils::FileSystem::getEsConfigPath() + "/themesettings/" + Settings::getInstance()->getString("ThemeSet") + ".cfg";
+			std::string path = Paths::getUserEmulationStationPath() + "/themesettings/" + Settings::getInstance()->getString("ThemeSet") + ".cfg";
 			if (Utils::FileSystem::exists(path))
 				Utils::FileSystem::removeFile(path);
 		}
@@ -3173,7 +3186,7 @@ void GuiMenu::openSoundSettings()
 	
 	s->addSwitch(_("DISPLAY SONG TITLES"), "audio.display_titles", true);
 
-	// batocera - how long to display the song titles?
+	// how long to display the song titles?
 	auto titles_time = std::make_shared<SliderComponent>(mWindow, 2.f, 120.f, 2.f, "s");
 	titles_time->setValue(Settings::getInstance()->getInt("audio.display_titles_time"));
 	s->addWithLabel(_("SONG TITLE DISPLAY DURATION"), titles_time);
@@ -3206,7 +3219,7 @@ void GuiMenu::openWifiSettings(Window* win, std::string title, std::string data,
 	win->pushGui(new GuiWifi(win, title, data, onsave));
 }
 
-void GuiMenu::openNetworkSettings_batocera(bool selectWifiEnable)
+void GuiMenu::openNetworkSettings(bool selectWifiEnable)
 {
 	bool baseWifiEnabled = SystemConf::getInstance()->getBool("wifi.enabled");
 
@@ -3290,19 +3303,19 @@ void GuiMenu::openNetworkSettings_batocera(bool selectWifiEnable)
 				ApiSystem::getInstance()->disableWifi();
 
 			delete s;
-			openNetworkSettings_batocera(true);
+			openNetworkSettings(true);
 		}
 	});
 
 	mWindow->pushGui(s);
 }
 
-void GuiMenu::openQuitMenu_batocera()
+void GuiMenu::openQuitMenu()
 {
-  GuiMenu::openQuitMenu_batocera_static(mWindow);
+  GuiMenu::openQuitMenu_static(mWindow);
 }
 
-void GuiMenu::openQuitMenu_batocera_static(Window *window, bool quickAccessMenu, bool animate)
+void GuiMenu::openQuitMenu_static(Window *window, bool quickAccessMenu, bool animate)
 {
 #ifdef WIN32
 	if (!quickAccessMenu && Settings::getInstance()->getBool("ShowOnlyExit"))
@@ -3330,7 +3343,7 @@ void GuiMenu::openQuitMenu_batocera_static(Window *window, bool quickAccessMenu,
 					Window* w = window;
 					AudioManager::getInstance()->playRandomMusic(false);
 					delete s;
-					openQuitMenu_batocera_static(w, true, false);
+					openQuitMenu_static(w, true, false);
 				}, "iconSound");
 			}
 		}
@@ -3347,21 +3360,11 @@ void GuiMenu::openQuitMenu_batocera_static(Window *window, bool quickAccessMenu,
 
 		}, "iconScraper", true);
 		
-#if WIN32	
-#define BATOCERA_MANUAL_FILE Utils::FileSystem::getEsConfigPath() + "/notice.pdf"
-#else
-#define BATOCERA_MANUAL_FILE "/usr/share/batocera/doc/notice.pdf"
-#endif
-
-		if (ApiSystem::getInstance()->isScriptingSupported(ApiSystem::ScriptId::PDFEXTRACTION) && Utils::FileSystem::exists(BATOCERA_MANUAL_FILE))
+		if (ApiSystem::getInstance()->isScriptingSupported(ApiSystem::ScriptId::PDFEXTRACTION) && Utils::FileSystem::exists(Paths::getUserManualPath()))
 		{
-#if defined(WIN32)
 			s->addEntry(_("VIEW USER'S MANUAL"), false, [s, window]
-#else
-			s->addEntry(_("VIEW BATOCERA MANUAL"), false, [s, window]
-#endif
 			{
-				GuiImageViewer::showPdf(window, BATOCERA_MANUAL_FILE);
+				GuiImageViewer::showPdf(window, Paths::getUserManualPath());
 				delete s;
 			}, "iconManual");
 		}
@@ -4009,29 +4012,15 @@ std::vector<DecorationSetInfo> GuiMenu::getDecorationsSets(SystemData* system)
 
 	static const size_t pathCount = 3;
 
-	
-#if WIN32
 	std::vector<std::string> paths = 
 	{
-		Utils::FileSystem::getEsConfigPath() + "/decorations" // for win32 testings
-	};
-
-	std::string win32path = Win32ApiSystem::getEmulatorLauncherPath("system.decorations");
-	if (!win32path.empty())
-		paths[0] = win32path; 
-	
-	win32path = Win32ApiSystem::getEmulatorLauncherPath("decorations");
-	if (!win32path.empty())
-		paths.push_back(win32path);
-
-
-#else
-	std::vector<std::string> paths = {
-		"/usr/share/batocera/datainit/decorations",
-		"/userdata/decorations"
-	};
+#if WIN32
+		Paths::getUserEmulationStationPath() + "/decorations", // for win32 testings
 #endif
-
+		Paths::getUserDecorationsPath(),
+		Paths::getDecorationsPath()
+	};
+	
 	Utils::FileSystem::stringList dirContent;
 	std::string folder;
 
@@ -4205,7 +4194,7 @@ void GuiMenu::saveSubsetSettings()
 			fileData += system->getName() + ".gridSize=" + gridSizeOverride + "\r";
 	}
 
-	std::string path = Utils::FileSystem::getEsConfigPath() + "/themesettings";
+	std::string path = Paths::getUserEmulationStationPath() + "/themesettings";
 	if (!Utils::FileSystem::exists(path))
 		Utils::FileSystem::createDirectory(path);
 
@@ -4224,7 +4213,7 @@ void GuiMenu::saveSubsetSettings()
 
 void GuiMenu::loadSubsetSettings(const std::string themeName)
 {
-	std::string path = Utils::FileSystem::getEsConfigPath() + "/themesettings";
+	std::string path = Paths::getUserEmulationStationPath() + "/themesettings";
 	if (!Utils::FileSystem::exists(path))
 		Utils::FileSystem::createDirectory(path);
 

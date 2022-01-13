@@ -10,6 +10,7 @@
 #include "SystemConf.h"
 #include "id3v2lib/include/id3v2lib.h"
 #include "ThemeData.h"
+#include "Paths.h"
 
 #ifdef WIN32
 #include <time.h>
@@ -137,7 +138,6 @@ void AudioManager::stop()
 			sSoundVector[i]->stop();
 }
 
-// batocera
 void AudioManager::getMusicIn(const std::string &path, std::vector<std::string>& all_matching_files)
 {
 	if (!Utils::FileSystem::isDirectory(path))
@@ -168,7 +168,6 @@ void AudioManager::getMusicIn(const std::string &path, std::vector<std::string>&
 	}
 }
 
-// batocera
 void AudioManager::playRandomMusic(bool continueIfPlaying) 
 {
 	if (!Settings::BackgroundMusic())
@@ -182,15 +181,15 @@ void AudioManager::playRandomMusic(bool continueIfPlaying)
 
 	// check in User music directory
 	if (musics.empty())
-		getMusicIn("/userdata/music", musics);
+		getMusicIn(Paths::getUserMusicPath(), musics);
 
 	// check in system sound directory
 	if (musics.empty())
-		getMusicIn("/usr/share/batocera/music", musics);
+		getMusicIn(Paths::getMusicPath(), musics);
 
 	// check in .emulationstation/music directory
 	if (musics.empty())
-		getMusicIn(Utils::FileSystem::getHomePath() + "/.emulationstation/music", musics);
+		getMusicIn(Paths::getUserEmulationStationPath() + "/music", musics);
 
 	if (musics.empty())
 		return;
@@ -235,7 +234,6 @@ void AudioManager::playMusic(std::string path)
 	Mix_HookMusicFinished(AudioManager::musicEnd_callback);
 }
 
-// batocera
 void AudioManager::musicEnd_callback()
 {
 	if (!AudioManager::getInstance()->mPlayingSystemThemeSong.empty())
@@ -247,7 +245,6 @@ void AudioManager::musicEnd_callback()
 	AudioManager::getInstance()->playRandomMusic(false);
 }
 
-// batocera
 void AudioManager::stopMusic(bool fadeOut)
 {
 	if (mCurrentMusic == NULL)
@@ -257,7 +254,7 @@ void AudioManager::stopMusic(bool fadeOut)
 
 	if (fadeOut)
 	{
-		// Fade-out is nicer on Batocera!
+		// Fade-out is nicer !
 		while (!Mix_FadeOutMusic(500) && Mix_PlayingMusic())
 			SDL_Delay(100);
 	}
@@ -284,7 +281,6 @@ void AudioManager::setSongName(const std::string& song)
 	mSongNameChanged = true;
 }
 
-// batocera
 void AudioManager::playSong(const std::string& song)
 {
 	if (song == mCurrentSong)
